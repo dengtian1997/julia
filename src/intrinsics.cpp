@@ -794,6 +794,24 @@ static jl_cgval_t emit_ifelse(jl_codectx_t &ctx, jl_cgval_t c, jl_cgval_t x, jl_
     if (t2 == jl_bottom_type)
         return x;
 
+    if (t1 != t2) {
+         // type inference may know something we don't, in which case it may
+         // be illegal for us to convert to rt_hint. Check first if either
+         // of the types have empty intersection with the result type,
+         // in which case, we may use the other one.
+         if (jl_type_intersection(t1, rt_hint) == jl_bottom_type) {
+             return y;
+         } else if (jl_type_intersection(t2, rt_hint) == jl_bottom_type) {
+             return x;
+         }
+         // if they aren't the same type, consider using the expr type
+         // to instantiate a union-split optimization
+         x = convert_julia_type(ctx, x, rt_hint);
+         y = convert_julia_type(ctx, y, rt_hint);
+         t1 = x.typ;
+         t2 = y.typ;
+    }
+
     Value *ifelse_result;
     bool isboxed;
     Type *llt1 = julia_type_to_llvm(t1, &isboxed);
@@ -807,19 +825,6 @@ static jl_cgval_t emit_ifelse(jl_codectx_t &ctx, jl_cgval_t c, jl_cgval_t x, jl_
                 emit_unbox(ctx, llt1, x, t1));
     }
     else {
-        // type inference may know something we don't, in which case it may
-        // be illegal for us to convert to rt_hint. Check first if either
-        // of the types have empty intersection with the result type,
-        // in which case, we may use the other one.
-        if (jl_type_intersection(t1, rt_hint) == jl_bottom_type) {
-            return y;
-        } else if (jl_type_intersection(t2, rt_hint) == jl_bottom_type) {
-            return x;
-        }
-        // if they aren't the same type, consider using the expr type
-        // to instantiate a union-split optimization
-        x = convert_julia_type(ctx, x, rt_hint);
-        y = convert_julia_type(ctx, y, rt_hint);
         Value *x_tindex = x.TIndex;
         Value *y_tindex = y.TIndex;
         if (x_tindex || y_tindex) {
