@@ -782,11 +782,10 @@ static Value *emit_untyped_intrinsic(jl_codectx_t &ctx, intrinsic f, Value **arg
 
 static jl_cgval_t emit_ifelse(jl_codectx_t &ctx, jl_cgval_t c, jl_cgval_t x, jl_cgval_t y, jl_value_t *rt_hint)
 {
-    Value *isfalse = emit_condition(ctx, c, "ifelse"); // emit the first argument
-    // emit X and Y arguments
+    Value *isfalse = emit_condition(ctx, c, "ifelse");
     jl_value_t *t1 = x.typ;
     jl_value_t *t2 = y.typ;
-    // check the return value was valid
+    // handle cases where the condition is irrelevant based on type info
     if (t1 == jl_bottom_type && t2 == jl_bottom_type)
         return jl_cgval_t(); // undefined
     if (t1 == jl_bottom_type)
@@ -795,21 +794,20 @@ static jl_cgval_t emit_ifelse(jl_codectx_t &ctx, jl_cgval_t c, jl_cgval_t x, jl_
         return x;
 
     if (t1 != t2) {
-         // type inference may know something we don't, in which case it may
-         // be illegal for us to convert to rt_hint. Check first if either
-         // of the types have empty intersection with the result type,
-         // in which case, we may use the other one.
-         if (jl_type_intersection(t1, rt_hint) == jl_bottom_type) {
-             return y;
-         } else if (jl_type_intersection(t2, rt_hint) == jl_bottom_type) {
-             return x;
-         }
-         // if they aren't the same type, consider using the expr type
-         // to instantiate a union-split optimization
-         x = convert_julia_type(ctx, x, rt_hint);
-         y = convert_julia_type(ctx, y, rt_hint);
-         t1 = x.typ;
-         t2 = y.typ;
+        // type inference may know something we don't, in which case it may
+        // be illegal for us to convert to rt_hint. Check first if either
+        // of the types have empty intersection with the result type,
+        // in which case, we may use the other one.
+        if (jl_type_intersection(t1, rt_hint) == jl_bottom_type)
+            return y;
+        else if (jl_type_intersection(t2, rt_hint) == jl_bottom_type)
+            return x;
+        // if they aren't the same type, consider using the expr type
+        // to instantiate a union-split optimization
+        x = convert_julia_type(ctx, x, rt_hint);
+        y = convert_julia_type(ctx, y, rt_hint);
+        t1 = x.typ;
+        t2 = y.typ;
     }
 
     Value *ifelse_result;
